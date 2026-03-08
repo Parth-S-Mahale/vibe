@@ -80,7 +80,7 @@ const AssistantMessage = ({
             <div className="flex items-center gap-2 pl-2 mb-2">
                 <Image 
                     src="/logo.svg"
-                    alt="Vibe"
+                    alt="Orbix"
                     width={18}
                     height={18}
                 />
