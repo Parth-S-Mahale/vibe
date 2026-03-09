@@ -1,6 +1,6 @@
 import z from "zod";
 import { Sandbox } from "@e2b/code-interpreter";
-import { gemini, createAgent, createTool, createNetwork, Agent, type Tool } from "@inngest/agent-kit";
+import { openai, createAgent, createTool, createNetwork, Agent, type Tool } from "@inngest/agent-kit";
 
 import { PROMPT } from "@/prompt";
 
@@ -26,9 +26,8 @@ export const codeAgentFunction = inngest.createFunction(
       name: "code-agent",
       description: "An expert coding agent",
       system: PROMPT,
-      model: gemini({
-        model: "gemini-2.5-flash",
-        apiKey: process.env.GEMINI_API_KEY,
+      model: openai({
+        model: "gpt-5-mini",
       }),
       tools: [
         createTool({
@@ -50,6 +49,7 @@ export const codeAgentFunction = inngest.createFunction(
                   onStderr: (data: string) => {
                     buffers.stderr += data;
                   },
+                  timeoutMs:20_000,
                 });
                 return result.stdout;
               } catch (e) {
@@ -57,7 +57,9 @@ export const codeAgentFunction = inngest.createFunction(
                   `Command failed: ${e} \nstdout: ${buffers.stdout}\nstderror: ${buffers.stderr}`,
                 );
 
-                return `Command failed: ${e} \nstdout: ${buffers.stdout}\nstderror: ${buffers.stderr}`;
+                return `ERROR: Command execution failed or timed out.
+                        stdout: ${buffers.stdout} 
+                        stderr: ${buffers.stderr}`;
               }
             });
           },
