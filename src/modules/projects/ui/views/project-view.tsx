@@ -6,6 +6,7 @@ import { EyeIcon, CodeIcon, CrownIcon } from "lucide-react";
 import { FileExplorer } from "@/components/file-explorer";
 import { Fragment } from "@/generated/prisma/client";
 import { Button } from "@/components/ui/button";
+import { UserControl } from "@/components/user-control";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
     ResizableHandle,
@@ -77,6 +78,7 @@ export const ProjectView = ({ projectId }: Props) => {
                                     <CrownIcon /> Upgrade
                                     </Link>
                                 </Button>
+                                <UserControl />
                             </div>
                         </div>
                         <TabsContent value="preview">
