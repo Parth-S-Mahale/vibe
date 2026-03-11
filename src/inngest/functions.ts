@@ -1,12 +1,22 @@
 import z from "zod";
 import { Sandbox } from "@e2b/code-interpreter";
-import { openai, createAgent, createTool, createNetwork, Agent, type Tool } from "@inngest/agent-kit";
+import {
+  openai,
+  gemini,
+  createAgent,
+  createTool,
+  createNetwork,
+  Agent,
+  type Tool,
+  type Message,
+  createState,
+} from "@inngest/agent-kit";
 
-import { PROMPT } from "@/prompt";
+import { prisma } from "@/lib/db";
+import { FRAGMENT_TITLE_PROMPT, PROMPT, RESPONSE_PROMPT } from "@/prompt";
 
 import { inngest } from "./client";
-import { getSandbox, lastAssistantTextMessageContent } from "./utils";
-import { prisma } from "@/lib/db";
+import { getSandbox, lastAssistantTextMessageContent, parseAgentOutput } from "./utils";
 
 interface AgentState {
   summary: string;
@@ -22,12 +32,50 @@ export const codeAgentFunction = inngest.createFunction(
       return sandbox.sandboxId;
     });
 
+    const previousMessages = await step.run(
+      "get-previous-messages",
+      async () => {
+        const formattedMessages: Message[] = [];
+
+        const messages = await prisma.message.findMany({
+          where: {
+            projectId: event.data.projectId,
+          },
+          orderBy: {
+            createdAt: "desc",
+          },
+        });
+        for (const message of messages) {
+          formattedMessages.push({
+            type: "text",
+            role: message.role === "ASSISTANT" ? "assistant" : "user",
+            content: message.content,
+          });
+        }
+
+        return formattedMessages;
+      },
+    );
+
+    const state = createState<AgentState>(
+      {
+        summary: "",
+        files: {},
+      },
+      {
+        messages: previousMessages,
+      },
+    );
+
     const codeAgent = createAgent<AgentState>({
       name: "code-agent",
       description: "An expert coding agent",
       system: PROMPT,
       model: openai({
-        model: "gpt-5",
+        model: "gpt-4o",
+        defaultParameters: {
+          temperature: 0.1,
+        },
       }),
       tools: [
         createTool({
@@ -49,7 +97,7 @@ export const codeAgentFunction = inngest.createFunction(
                   onStderr: (data: string) => {
                     buffers.stderr += data;
                   },
-                  timeoutMs:20_000,
+                  timeoutMs: 20_000,
                 });
                 return result.stdout;
               } catch (e) {
@@ -75,27 +123,33 @@ export const codeAgentFunction = inngest.createFunction(
               }),
             ),
           }),
-          handler: async ({ files }, { step, network }: Tool.Options<AgentState>) => {
+          handler: async (
+            { files },
+            { step, network }: Tool.Options<AgentState>,
+          ) => {
             /**
              * {
              * "/app.tsx": "<p>app page</p>",
              * "button.tsx": "<>"
              * }
              */
-            const newFiles = await step?.run("createOrUpdateFiles", async () => {
-              try {
-                const updatedFiles = network.state.data.files || {};
-                const sandbox = await getSandbox(sandboxId);
-                for (const file of files) {
-                  await sandbox.files.write(file.path, file.content);
-                  updatedFiles[file.path] = file.content;
+            const newFiles = await step?.run(
+              "createOrUpdateFiles",
+              async () => {
+                try {
+                  const updatedFiles = network.state.data.files || {};
+                  const sandbox = await getSandbox(sandboxId);
+                  for (const file of files) {
+                    await sandbox.files.write(file.path, file.content);
+                    updatedFiles[file.path] = file.content;
+                  }
+                  return updatedFiles;
+                } catch (e) {
+                  return "Error: " + e;
                 }
-                return updatedFiles;
-              } catch (e) {
-                return "Error: " + e;
-              }
-            });
-            if (typeof newFiles === 'object') {
+              },
+            );
+            if (typeof newFiles === "object") {
               network.state.data.files = newFiles;
             }
           },
@@ -113,34 +167,36 @@ export const codeAgentFunction = inngest.createFunction(
                 const contents = [];
                 for (const file of files) {
                   const content = await sandbox.files.read(file);
-                  contents.push({ path: file, content});
+                  contents.push({ path: file, content });
                 }
                 return JSON.stringify(contents);
               } catch (e) {
                 return "Error: " + e;
               }
-            })
-          }
-        })
+            });
+          },
+        }),
       ],
       lifecycle: {
         onResponse: async ({ result, network }) => {
-          const lastAssistantMessageText = lastAssistantTextMessageContent(result);
+          const lastAssistantMessageText =
+            lastAssistantTextMessageContent(result);
 
-          if(lastAssistantMessageText && network) {
+          if (lastAssistantMessageText && network) {
             if (lastAssistantMessageText.includes("<task_summary>")) {
               network.state.data.summary = lastAssistantMessageText;
             }
           }
           return result;
-        }
-      }
+        },
+      },
     });
 
     const network = createNetwork<AgentState>({
       name: "coding-agent-network",
       agents: [codeAgent],
       maxIter: 15,
+      defaultState: state,
       router: async ({ network }) => {
         const summary = network.state.data.summary;
 
@@ -151,9 +207,34 @@ export const codeAgentFunction = inngest.createFunction(
       },
     });
 
-    const result = await network.run(event.data.value);
+    const result = await network.run(event.data.value, { state });
 
-    const isError = 
+    const fragmentTitleGenerator = createAgent({
+      name: "fragment-title-generator",
+      description: "A fragment title generator",
+      system: FRAGMENT_TITLE_PROMPT,
+      model: gemini({
+        model: "gemini-2.5-flash",
+        apiKey: process.env.GEMINI_API_KEY,
+      }),
+    });
+
+    const responseGenerator = createAgent({
+      name: "response-generator",
+      description: "A response generator",
+      system: RESPONSE_PROMPT,
+      model: gemini({
+        model: "gemini-2.5-flash",
+        apiKey: process.env.GEMINI_API_KEY,
+      }),
+    });
+
+    const { output: fragmentTitleOutput } = await fragmentTitleGenerator.run(result.state.data.summary);
+
+    const { output: responseOutput } = await responseGenerator.run(result.state.data.summary);
+
+
+    const isError =
       !result.state.data.summary ||
       Object.keys(result.state.data.files || {}).length === 0;
 
@@ -164,40 +245,39 @@ export const codeAgentFunction = inngest.createFunction(
     });
 
     await step.run("save-result", async () => {
-      
       if (isError) {
         return await prisma.message.create({
           data: {
             projectId: event.data.projectId,
             content: "Something went wrong. Please try again.",
             role: "ASSISTANT",
-            type: "ERROR"
-          }
-        })
+            type: "ERROR",
+          },
+        });
       }
 
       return await prisma.message.create({
         data: {
           projectId: event.data.projectId,
-          content: result.state.data.summary,
+          content: parseAgentOutput(responseOutput),
           role: "ASSISTANT",
           type: "RESULT",
           fragment: {
             create: {
               sandboxUrl: sandboxUrl,
-              title: "Fragment",
+              title: parseAgentOutput(fragmentTitleOutput),
               files: result.state.data.files,
             },
-          }
-        }
-      })
-    })
+          },
+        },
+      });
+    });
 
-    return { 
+    return {
       url: sandboxUrl,
       title: "Fragment",
       files: result.state.data.files,
-      summary: result.state.data.summary, 
+      summary: result.state.data.summary,
     };
   },
 );
