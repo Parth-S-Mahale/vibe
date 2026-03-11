@@ -40,14 +40,22 @@ export const ProjectForm = () => {
   const createProject = useMutation(
     trpc.projects.create.mutationOptions({
       onSuccess: (data) => {
-        queryClient.invalidateQueries(trpc.projects.getMany.queryOptions());
+        queryClient.invalidateQueries(
+          trpc.projects.getMany.queryOptions()
+        );
+        queryClient.invalidateQueries(
+          trpc.usage.status.queryOptions()
+        )
         router.push(`/projects/${data.id}`);
-        // TODO: Invalidate usage status
       },
       onError: (error) => {
         toast.error(error.message);
         if (error.data?.code === "UNAUTHORIZED") {
           clerk.openSignIn();
+        }
+
+        if (error.data?.code === "TOO_MANY_REQUESTS") {
+          router.push("/pricing");
         }
       },
     }),
