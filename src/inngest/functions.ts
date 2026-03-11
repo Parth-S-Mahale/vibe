@@ -16,7 +16,12 @@ import { prisma } from "@/lib/db";
 import { FRAGMENT_TITLE_PROMPT, PROMPT, RESPONSE_PROMPT } from "@/prompt";
 
 import { inngest } from "./client";
-import { getSandbox, lastAssistantTextMessageContent, parseAgentOutput } from "./utils";
+import { SANDBOX_TIMEOUT } from "./types";
+import {
+  getSandbox,
+  lastAssistantTextMessageContent,
+  parseAgentOutput,
+} from "./utils";
 
 interface AgentState {
   summary: string;
@@ -29,6 +34,7 @@ export const codeAgentFunction = inngest.createFunction(
   async ({ event, step }) => {
     const sandboxId = await step.run("get-sandbox-id", async () => {
       const sandbox = await Sandbox.create("vibe-test-2");
+      await sandbox.setTimeout(SANDBOX_TIMEOUT);
       return sandbox.sandboxId;
     });
 
@@ -44,7 +50,9 @@ export const codeAgentFunction = inngest.createFunction(
           orderBy: {
             createdAt: "desc",
           },
+          take: 5,
         });
+
         for (const message of messages) {
           formattedMessages.push({
             type: "text",
@@ -53,7 +61,7 @@ export const codeAgentFunction = inngest.createFunction(
           });
         }
 
-        return formattedMessages;
+        return formattedMessages.reverse();
       },
     );
 
@@ -229,10 +237,13 @@ export const codeAgentFunction = inngest.createFunction(
       }),
     });
 
-    const { output: fragmentTitleOutput } = await fragmentTitleGenerator.run(result.state.data.summary);
+    const { output: fragmentTitleOutput } = await fragmentTitleGenerator.run(
+      result.state.data.summary,
+    );
 
-    const { output: responseOutput } = await responseGenerator.run(result.state.data.summary);
-
+    const { output: responseOutput } = await responseGenerator.run(
+      result.state.data.summary,
+    );
 
     const isError =
       !result.state.data.summary ||
