@@ -7,7 +7,7 @@ export async function getSandbox(sandboxId: string) {
   const sandbox = await Sandbox.connect(sandboxId);
   await sandbox.setTimeout(SANDBOX_TIMEOUT);
   return sandbox;
-}
+};
 
 export function lastAssistantTextMessageContent(result: AgentResult) {
   const lastAssistantTextMessageIndex = result.output.findLastIndex(
@@ -23,7 +23,7 @@ export function lastAssistantTextMessageContent(result: AgentResult) {
       ? message.content
       : message.content.map((c) => c.text).join("")
     : undefined;
-}
+};
 
 export const parseAgentOutput = (value: Message[]) => {
   const output = value[0];
@@ -33,8 +33,8 @@ export const parseAgentOutput = (value: Message[]) => {
   }
 
   if (Array.isArray(output.content)) {
-    return output.content.map((txt) => txt).join("");
+    return output.content.map((txt) => txt).join("")
   } else {
-    return output.content;
+    return output.content
   }
 };
