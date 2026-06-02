@@ -3,7 +3,7 @@
 import { dark } from "@clerk/themes";
 import { UserButton } from "@clerk/nextjs";
 
-import { userCurrentTheme } from "@/hooks/use-current-theme";
+import { useCurrentTheme } from "@/hooks/use-current-theme";
 
 interface Props {
     showName?: boolean;
@@ -11,7 +11,7 @@ interface Props {
 
 export const UserControl = ({ showName }: Props) => {
 
-    const currentTheme = userCurrentTheme();
+    const currentTheme = useCurrentTheme();
 
     return (
         <UserButton 

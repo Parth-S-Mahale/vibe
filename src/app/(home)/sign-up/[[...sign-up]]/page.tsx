@@ -3,11 +3,11 @@
 import { dark } from "@clerk/themes";
 import { SignUp } from "@clerk/nextjs";
 
-import { userCurrentTheme } from "@/hooks/use-current-theme";
+import { useCurrentTheme } from "@/hooks/use-current-theme";
 
 const Page = () => {
 
-    const currentTheme = userCurrentTheme();
+    const currentTheme = useCurrentTheme();
 
     return (
         <div className="flex flex-col max-w-3xl mx-auto w-full">
